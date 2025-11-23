@@ -4,8 +4,6 @@ const fs = require('fs');
 // ========== CONFIGURATION ==========
 const CONFIG = {
     baseUrl: 'http://109.236.84.81/ints',
-    username: process.env.PLATFORM_USERNAME || 'LoaiAbdElhay',
-    password: process.env.PLATFORM_PASSWORD || 'egyP@$$w01rd',
     outputDir: './data',
     updateInterval: 60000 // Update every 60 seconds (because loading all data takes longer)
 };
@@ -40,62 +38,45 @@ class SMSScraper {
     async init() {
         log('Starting browser...');
         this.browser = await puppeteer.launch({
-            headless: 'new', // Headless on GitHub
+            headless: false,
             args: [
                 '--no-sandbox', 
-                '--disable-setuid-sandbox',
-                '--disable-dev-shm-usage',
-                '--disable-gpu'
+                '--disable-setuid-sandbox'
             ],
-            defaultViewport: { width: 1920, height: 1080 }
+            defaultViewport: null
         });
         
         const pages = await this.browser.pages();
         this.page = pages[0] || await this.browser.newPage();
         
-        // Set user agent
-        await this.page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
-        
         log('Browser started', 'success');
+        log('');
+        log('👉 PLEASE LOGIN MANUALLY NOW!', 'warning');
+        log('1. Login to the platform in the opened browser', 'info');
+        log('2. Wait for the dashboard to load', 'info');
+        log('3. Come back here - scraper will start automatically!', 'info');
+        log('');
     }
 
-    async login() {
-        try {
-            log('Logging in...');
-            await this.page.goto(`${CONFIG.baseUrl}/login`, { 
-                waitUntil: 'domcontentloaded',
-                timeout: 30000 
-            });
-            
-            // Wait for login form
-            await this.page.waitForSelector('input[type="text"], input[name*="user"]', { timeout: 10000 });
-            await this.page.waitForSelector('input[type="password"]', { timeout: 10000 });
-            
-            // Fill credentials
-            await this.page.type('input[type="text"], input[name*="user"]', CONFIG.username);
-            await this.page.type('input[type="password"]', CONFIG.password);
-            
-            // Submit
-            await this.page.click('button[type="submit"], input[type="submit"]');
-            
-            // Wait for navigation
-            await this.page.waitForNavigation({ 
-                waitUntil: 'domcontentloaded',
-                timeout: 15000 
-            });
-            
-            // Check if login successful
+    async waitForLogin() {
+        log('Waiting for you to login...', 'warning');
+        
+        // Open login page
+        await this.page.goto(`${CONFIG.baseUrl}/login`, { 
+            waitUntil: 'domcontentloaded',
+            timeout: 60000 
+        }).catch(() => {});
+        
+        // Wait until user navigates away from login page
+        while (true) {
+            await new Promise(resolve => setTimeout(resolve, 2000));
             const url = this.page.url();
-            if (url.includes('login') || url.includes('Login')) {
-                log('Login failed', 'error');
-                return false;
-            }
             
-            log('Login successful', 'success');
-            return true;
-        } catch (error) {
-            log(`Login failed: ${error.message}`, 'error');
-            return false;
+            if (!url.includes('login') && !url.includes('Login')) {
+                log('Login detected!', 'success');
+                await new Promise(resolve => setTimeout(resolve, 3000)); // Wait for page to settle
+                return true;
+            }
         }
     }
 
@@ -235,11 +216,7 @@ class SMSScraper {
     async run() {
         try {
             await this.init();
-            const loginSuccess = await this.login();
-            if (!loginSuccess) {
-                log('Cannot continue without login', 'error');
-                return;
-            }
+            await this.waitForLogin();
             
             log('');
             log('Starting continuous updates...', 'success');
